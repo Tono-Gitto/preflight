@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111111">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="manifest" href="manifest.json">
+  <title>777 TimeLine</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      margin: 0;
+      background: #111;
+      color: #eee;
+      font-family: -apple-system, system-ui, 'SF Pro Display', sans-serif;
+      font-size: 16px;
+      overscroll-behavior: none;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+
+    /* ── HEADER ── */
+    #topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      height: 56px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #333;
+      flex-shrink: 0;
+    }
+
+    #utc-clock {
+      font-family: 'SF Mono', 'Courier New', monospace;
+      font-size: 22px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 1px;
+    }
+
+    .utc-label {
+      font-size: 11px;
+      color: #888;
+      margin-right: 4px;
+    }
+
+    #std-display {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #std-value {
+      font-family: 'SF Mono', 'Courier New', monospace;
+      font-size: 18px;
+      color: #ccc;
+    }
+
+    #std-label {
+      font-size: 11px;
+      color: #888;
+    }
+
+    #btn-change-std {
+      background: #2a2a3a;
+      color: #7aadff;
+      border: 1px solid #3a3a5a;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    /* ── VIEWS ── */
+    .view {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── CHECKLIST ── */
+    #checklist-container {
+      padding-bottom: 8px;
+    }
+
+    .checklist-row {
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid rgba(0,0,0,0.3);
+      transition: background-color 0.4s ease;
+    }
+
+    .row-inner {
+      display: flex;
+      align-items: center;
+      min-height: 62px;
+      padding: 0 12px;
+      gap: 10px;
+      transform: translateX(0);
+      transition: transform 0.2s ease;
+      background: inherit;
+    }
+
+    .col-offset {
+      font-family: 'SF Mono', 'Courier New', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.75);
+      width: 52px;
+      flex-shrink: 0;
+      text-align: center;
+    }
+
+    .col-time {
+      font-family: 'SF Mono', 'Courier New', monospace;
+      font-size: 15px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.9);
+      width: 66px;
+      flex-shrink: 0;
+    }
+
+    .day-indicator {
+      font-size: 10px;
+      font-weight: 400;
+      opacity: 0.7;
+      vertical-align: super;
+    }
+
+    .col-label {
+      flex: 1;
+      font-size: 16px;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .swipe-hint-left {
+      position: absolute;
+      left: 0; top: 0; bottom: 0; width: 88px;
+      background: #1a5c2e;
+      color: #fff;
+      font-size: 28px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .swipe-hint-right {
+      position: absolute;
+      right: 0; top: 0; bottom: 0; width: 88px;
+      background: #7a3a00;
+      color: #fff;
+      font-size: 28px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Row color states */
+    .row-blue  { background: #0d2a45; }
+    .row-green { background: #0d3320; }
+    .row-red   { background: #3d0d0d; }
+    .row-done  { background: #1e1e1e; }
+
+    .row-done .col-label {
+      color: rgba(255,255,255,0.35);
+      text-decoration: line-through;
+    }
+
+    .row-done .col-offset,
+    .row-done .col-time {
+      opacity: 0.35;
+    }
+
+    /* ── EMPTY STATE ── */
+    .empty-state {
+      padding: 48px 24px;
+      text-align: center;
+      color: #555;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    /* ── STD MODAL ── */
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #modal-overlay.visible {
+      display: flex;
+    }
+
+    #modal-std {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 16px;
+      padding: 28px 32px;
+      width: min(400px, 90vw);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .modal-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      text-align: center;
+    }
+
+    .modal-subtitle {
+      font-size: 13px;
+      color: #888;
+      text-align: center;
+      margin-top: -12px;
+    }
+
+    .modal-field label {
+      display: block;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    #std-input {
+      width: 100%;
+      background: #111;
+      border: 1px solid #444;
+      border-radius: 10px;
+      color: #fff;
+      font-family: 'SF Mono', 'Courier New', monospace;
+      font-size: 32px;
+      text-align: center;
+      padding: 12px;
+      letter-spacing: 4px;
+      outline: none;
+    }
+
+    #std-input:focus {
+      border-color: #7aadff;
+    }
+
+    .day-toggle {
+      display: flex;
+      gap: 8px;
+    }
+
+    .day-btn {
+      flex: 1;
+      padding: 10px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 10px;
+      color: #aaa;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .day-btn.active {
+      background: #1a3a5c;
+      border-color: #7aadff;
+      color: #fff;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn-primary {
+      flex: 1;
+      padding: 14px;
+      background: #1a5c2e;
+      border: 1px solid #2e8b57;
+      border-radius: 10px;
+      color: #fff;
+      font-size: 17px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn-secondary {
+      padding: 14px 20px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 10px;
+      color: #aaa;
+      font-size: 17px;
+      cursor: pointer;
+    }
+
+    /* ── EDITOR VIEW ── */
+    #view-editor {
+      display: flex;
+      flex-direction: column;
+    }
+
+    #editor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #333;
+      flex-shrink: 0;
+    }
+
+    #editor-header span {
+      font-size: 13px;
+      color: #888;
+    }
+
+    #btn-reset {
+      background: #3d0d0d;
+      color: #ff7070;
+      border: 1px solid #5c1a1a;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    #editor-container {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .editor-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      min-height: 56px;
+      border-bottom: 1px solid #222;
+    }
+
+    .editor-offset {
+      font-family: 'SF Mono', 'Courier New', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: #7aadff;
+      width: 52px;
+      flex-shrink: 0;
+    }
+
+    .editor-label {
+      flex: 1;
+      font-size: 15px;
+      color: #ddd;
+    }
+
+    .btn-delete-item {
+      width: 36px;
+      height: 36px;
+      background: none;
+      border: 1px solid #444;
+      border-radius: 50%;
+      color: #888;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    /* ── ADD ITEM FORM ── */
+    #add-item-section {
+      flex-shrink: 0;
+      padding: 12px 16px;
+      border-top: 1px solid #333;
+      background: #1a1a1a;
+    }
+
+    #btn-show-add {
+      width: 100%;
+      padding: 12px;
+      background: #1a2a1a;
+      border: 1px dashed #2e8b57;
+      border-radius: 10px;
+      color: #4caf50;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    #add-item-form {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #add-item-form.visible {
+      display: flex;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .form-field label {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-input {
+      background: #111;
+      border: 1px solid #444;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 16px;
+      padding: 10px 12px;
+      outline: none;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .form-input:focus {
+      border-color: #7aadff;
+    }
+
+    #input-offset {
+      width: 90px;
+      font-family: 'SF Mono', 'Courier New', monospace;
+      text-align: center;
+    }
+
+    #input-label {
+      flex: 1;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-save-item {
+      flex: 1;
+      padding: 10px;
+      background: #1a5c2e;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-cancel-item {
+      padding: 10px 16px;
+      background: #2a2a2a;
+      border: none;
+      border-radius: 8px;
+      color: #aaa;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    /* ── BOTTOM NAV ── */
+    #bottom-nav {
+      display: flex;
+      height: 56px;
+      background: #1a1a1a;
+      border-top: 1px solid #333;
+      flex-shrink: 0;
+    }
+
+    .nav-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      color: #666;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      transition: color 0.15s;
+    }
+
+    .nav-btn.active {
+      color: #7aadff;
+    }
+
+    .nav-btn svg {
+      width: 22px;
+      height: 22px;
+      fill: currentColor;
+    }
+
+    /* ── INSTALL HINT ── */
+    #install-hint {
+      display: none;
+      position: fixed;
+      bottom: calc(56px + env(safe-area-inset-bottom) + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #2a2a3a;
+      border: 1px solid #3a3a5a;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-size: 13px;
+      color: #aaa;
+      z-index: 50;
+      white-space: nowrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #install-hint.visible {
+      display: flex;
+    }
+
+    #install-hint button {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+  </style>
+</head>
+<body>
+
+<!-- STD MODAL OVERLAY -->
+<div id="modal-overlay">
+  <div id="modal-std">
+    <div class="modal-title">Set STD (UTC)</div>
+    <div class="modal-subtitle">Standard Time of Departure</div>
+
+    <div class="modal-field">
+      <label>Time (HH:MM)</label>
+      <input type="text" id="std-input" inputmode="numeric" placeholder="14:30" maxlength="5" autocomplete="off">
+    </div>
+
+    <div class="modal-field">
+      <label>Date</label>
+      <div class="day-toggle">
+        <button class="day-btn active" data-day="today" onclick="selectDay('today')">Today</button>
+        <button class="day-btn" data-day="tomorrow" onclick="selectDay('tomorrow')">Tomorrow</button>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button id="modal-cancel" class="btn-secondary" onclick="closeStdModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveStd()">Set STD</button>
+    </div>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app">
+
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <div style="display:flex;align-items:baseline;gap:4px">
+      <span class="utc-label">UTC</span>
+      <span id="utc-clock">--:--:--</span>
+    </div>
+    <div id="std-display">
+      <span id="std-label">STD</span>
+      <span id="std-value">--:--</span>
+      <button id="btn-change-std" onclick="openStdModal(false)">Change</button>
+    </div>
+  </header>
+
+  <!-- CHECKLIST VIEW -->
+  <section id="view-main" class="view">
+    <div id="checklist-container"></div>
+  </section>
+
+  <!-- EDITOR VIEW -->
+  <section id="view-editor" class="view" style="display:none;">
+    <div id="editor-header">
+      <span id="editor-count">0 items</span>
+      <button id="btn-reset" onclick="confirmReset()">Reset Checklist</button>
+    </div>
+    <div id="editor-container"></div>
+    <div id="add-item-section">
+      <button id="btn-show-add" onclick="showAddForm()">+ Add Item</button>
+      <div id="add-item-form">
+        <div class="form-row">
+          <div class="form-field">
+            <label>T Offset (min)</label>
+            <input type="number" id="input-offset" class="form-input" placeholder="-75" inputmode="numeric">
+          </div>
+          <div class="form-field" style="flex:1">
+            <label>Description</label>
+            <input type="text" id="input-label" class="form-input" placeholder="Bridge Connected" maxlength="60" autocomplete="off">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-cancel-item" onclick="hideAddForm()">Cancel</button>
+          <button class="btn-save-item" onclick="submitAddItem()">Add</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BOTTOM NAV -->
+  <nav id="bottom-nav">
+    <button class="nav-btn active" data-view="main" onclick="showView('main')">
+      <svg viewBox="0 0 24 24"><path d="M3 4h18v2H3zm0 7h18v2H3zm0 7h18v2H3z"/></svg>
+      Checklist
+    </button>
+    <button class="nav-btn" data-view="editor" onclick="showView('editor')">
+      <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+      Editor
+    </button>
+  </nav>
+
+</div>
+
+<!-- INSTALL HINT -->
+<div id="install-hint">
+  <span>Install: tap Share → "Add to Home Screen"</span>
+  <button onclick="dismissInstallHint()">✕</button>
+</div>
+
+<script>
+  // ── STATE ──
+  let items = [];
+  let completedIds = new Set();
+  let stdEpochMs = 0;
+  let stdHhmm = '';
+  let currentView = 'main';
+
+  // ── DEFAULT ITEMS ──
+  const DEFAULT_ITEMS = [
+    { id: 'default-1',  offset: -75, label: 'Bridge Connected' },
+    { id: 'default-2',  offset: -60, label: 'ZFW received' },
+    { id: 'default-3',  offset: -55, label: 'Tech Log checked' },
+    { id: 'default-4',  offset: -45, label: 'Emergency Equipment Check Completed' },
+    { id: 'default-5',  offset: -35, label: 'Preflight Security Check Completed' },
+    { id: 'default-6',  offset: -30, label: 'Start Boarding' },
+    { id: 'default-7',  offset: -20, label: 'T/O Briefing' },
+    { id: 'default-8',  offset: -20, label: 'Departure Clearance' },
+    { id: 'default-9',  offset: -20, label: 'Preflight Checklist' },
+    { id: 'default-10', offset: -10, label: 'APU Started' },
+    { id: 'default-11', offset: -10, label: 'Push Back Truck Ready' },
+    { id: 'default-12', offset: -10, label: 'Loadsheet' },
+    { id: 'default-13', offset: -10, label: 'When 80% Boarded, Make Welcome PA if available' },
+    { id: 'default-14', offset:  20, label: 'Make PA if not completed on GND' },
+  ];
+
+  // ── LOCALSTORAGE ──
+  function loadState() {
+    items = JSON.parse(localStorage.getItem('checklist_items') || '[]');
+    if (items.length === 0) {
+      items = DEFAULT_ITEMS.map(i => ({ ...i }));
+      persistItems();
+    }
+    completedIds = new Set(JSON.parse(localStorage.getItem('completed_ids') || '[]'));
+    stdHhmm = localStorage.getItem('std_hhmm') || '';
+    stdEpochMs = parseInt(localStorage.getItem('std_epoch_ms') || '0', 10);
+  }
+
+  function persistItems() {
+    localStorage.setItem('checklist_items', JSON.stringify(items));
+  }
+
+  function persistCompleted() {
+    localStorage.setItem('completed_ids', JSON.stringify([...completedIds]));
+  }
+
+  function newId() {
+    return typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : Date.now().toString(36) + Math.random().toString(36).slice(2);
+  }
+
+  // ── WAKE LOCK ──
+  let wakeLock = null;
+  async function acquireWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') acquireWakeLock();
+  });
+
+  // ── SERVICE WORKER ──
+  function registerSW() {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  }
+
+  // ── UTC CLOCK ──
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('utc-clock').textContent =
+      pad(now.getUTCHours()) + ':' + pad(now.getUTCMinutes()) + ':' + pad(now.getUTCSeconds());
+  }
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function tick() {
+    updateClock();
+    if (currentView === 'main' && stdEpochMs) updateRowColors();
+  }
+
+  // ── COLOR LOGIC ──
+  function rowColorClass(item) {
+    if (completedIds.has(item.id)) return 'row-done';
+    const deltaMin = (stdEpochMs + item.offset * 60000 - Date.now()) / 60000;
+    if (deltaMin < 0)   return 'row-red';
+    if (deltaMin <= 10) return 'row-green';
+    return 'row-blue';
+  }
+
+  function updateRowColors() {
+    document.querySelectorAll('.checklist-row').forEach(row => {
+      const id = row.dataset.id;
+      const item = items.find(i => i.id === id);
+      if (item) row.className = 'checklist-row ' + rowColorClass(item);
+    });
+  }
+
+  // ── TIME FORMATTING ──
+  function formatItemTime(itemMs) {
+    const d = new Date(itemMs);
+    const sd = new Date(stdEpochMs);
+    const stdMidnight = Date.UTC(sd.getUTCFullYear(), sd.getUTCMonth(), sd.getUTCDate());
+    const itemMidnight = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    const dayDiff = Math.round((itemMidnight - stdMidnight) / 86400000);
+    const hhmm = pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+    if (dayDiff === 0) return hhmm;
+    return hhmm + '<span class="day-indicator">' + (dayDiff > 0 ? '+1' : '-1') + '</span>';
+  }
+
+  function formatOffset(offset) {
+    if (offset === 0) return 'T±0';
+    return offset > 0 ? 'T+' + offset : 'T' + offset;
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── CHECKLIST RENDER ──
+  function renderChecklist() {
+    const container = document.getElementById('checklist-container');
+    const sorted = [...items].sort((a, b) => a.offset - b.offset);
+
+    if (sorted.length === 0) {
+      container.innerHTML = '<div class="empty-state">No items yet — tap <strong>Editor</strong> to add checklist items.</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    sorted.forEach(item => {
+      const itemMs = stdEpochMs + item.offset * 60000;
+      const row = document.createElement('div');
+      row.className = 'checklist-row ' + rowColorClass(item);
+      row.dataset.id = item.id;
+
+      row.innerHTML =
+        '<div class="swipe-hint-left">&#10003;</div>' +
+        '<div class="swipe-hint-right">&#8635;</div>' +
+        '<div class="row-inner">' +
+          '<span class="col-offset">' + formatOffset(item.offset) + '</span>' +
+          '<span class="col-time">' + formatItemTime(itemMs) + '</span>' +
+          '<span class="col-label">' + escapeHtml(item.label) + '</span>' +
+        '</div>';
+
+      container.appendChild(row);
+    });
+
+  }
+
+  // ── SWIPE GESTURE ──
+  function attachSwipeHandlers() {
+    const container = document.getElementById('checklist-container');
+    let startX, startY, activeInner = null, disambiguated = false;
+
+    container.addEventListener('touchstart', e => {
+      const inner = e.target.closest('.row-inner');
+      if (!inner) return;
+      container.querySelectorAll('.row-inner').forEach(el => {
+        if (el !== inner) {
+          el.style.transition = 'transform 0.2s';
+          el.style.transform = 'translateX(0)';
+        }
+      });
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      activeInner = inner;
+      disambiguated = false;
+    }, { passive: true });
+
+    container.addEventListener('touchmove', e => {
+      if (!activeInner) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+
+      if (!disambiguated) {
+        if (Math.abs(dy) > Math.abs(dx) + 5) { activeInner = null; return; }
+        if (Math.abs(dx) > 8) disambiguated = true;
+        else return;
+      }
+
+      e.preventDefault();
+      const id = activeInner.closest('.checklist-row').dataset.id;
+      const isCompleted = completedIds.has(id);
+      // Direction-locked: incomplete rows swipe right only, completed rows swipe left only
+      const clamped = isCompleted
+        ? Math.max(-88, Math.min(0, dx))
+        : Math.max(0, Math.min(88, dx));
+      activeInner.style.transition = 'none';
+      activeInner.style.transform = 'translateX(' + clamped + 'px)';
+    }, { passive: false });
+
+    container.addEventListener('touchend', e => {
+      if (!activeInner) return;
+      const dx = e.changedTouches[0].clientX - startX;
+      const id = activeInner.closest('.checklist-row').dataset.id;
+      activeInner.style.transition = 'transform 0.2s';
+      activeInner.style.transform = 'translateX(0)';
+      activeInner = null;
+      if (dx > 44)  markDone(id);
+      if (dx < -44) markUndone(id);
+    }, { passive: true });
+
+    // ── MOUSE DRAG (macOS / desktop testing) ──
+    let mouseTracking = false;
+
+    container.addEventListener('mousedown', e => {
+      const inner = e.target.closest('.row-inner');
+      if (!inner) return;
+      container.querySelectorAll('.row-inner').forEach(el => {
+        if (el !== inner) { el.style.transition = 'transform 0.2s'; el.style.transform = 'translateX(0)'; }
+      });
+      startX = e.clientX;
+      startY = e.clientY;
+      activeInner = inner;
+      mouseTracking = true;
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!mouseTracking || !activeInner) return;
+      const dx = e.clientX - startX;
+      const id = activeInner.closest('.checklist-row').dataset.id;
+      const isCompleted = completedIds.has(id);
+      const clamped = isCompleted ? Math.max(-88, Math.min(0, dx)) : Math.max(0, Math.min(88, dx));
+      activeInner.style.transition = 'none';
+      activeInner.style.transform = 'translateX(' + clamped + 'px)';
+    });
+
+    document.addEventListener('mouseup', e => {
+      if (!mouseTracking || !activeInner) return;
+      const dx = e.clientX - startX;
+      const id = activeInner.closest('.checklist-row').dataset.id;
+      activeInner.style.transition = 'transform 0.2s';
+      activeInner.style.transform = 'translateX(0)';
+      mouseTracking = false;
+      activeInner = null;
+      if (dx > 44)  markDone(id);
+      if (dx < -44) markUndone(id);
+    });
+  }
+
+  function markDone(id) {
+    completedIds.add(id);
+    persistCompleted();
+    const row = document.querySelector('.checklist-row[data-id="' + id + '"]');
+    if (row) {
+      row.className = 'checklist-row row-done';
+    }
+  }
+
+  function markUndone(id) {
+    completedIds.delete(id);
+    persistCompleted();
+    updateRowColors();
+  }
+
+  // ── STD MODAL ──
+  let stdModalFirstTime = false;
+
+  function openStdModal(firstTime) {
+    stdModalFirstTime = !!firstTime;
+    if (stdHhmm) {
+      document.getElementById('std-input').value = stdHhmm.slice(0, 2) + ':' + stdHhmm.slice(2);
+    } else {
+      document.getElementById('std-input').value = '';
+    }
+    selectDay('today');
+    document.getElementById('modal-cancel').style.display = firstTime ? 'none' : '';
+    document.getElementById('modal-overlay').classList.add('visible');
+  }
+
+  function closeStdModal() {
+    if (stdModalFirstTime) return; // non-cancelable on first open
+    document.getElementById('modal-overlay').classList.remove('visible');
+  }
+
+  function selectDay(day) {
+    document.querySelectorAll('.day-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.day === day);
+    });
+  }
+
+  function saveStd() {
+    const raw = document.getElementById('std-input').value.trim();
+    // Accept HH:MM or HHMM
+    const normalized = raw.replace(':', '');
+    if (!/^\d{4}$/.test(normalized)) {
+      alert('Enter time as HH:MM (e.g. 14:30)');
+      return;
+    }
+    const h = parseInt(normalized.slice(0, 2), 10);
+    const m = parseInt(normalized.slice(2, 4), 10);
+    if (h > 23 || m > 59) {
+      alert('Invalid time. Hours 00-23, minutes 00-59.');
+      return;
+    }
+
+    const isTomorrow = document.querySelector('.day-btn[data-day="tomorrow"]').classList.contains('active');
+    const now = new Date();
+    const newEpoch = Date.UTC(
+      now.getUTCFullYear(), now.getUTCMonth(),
+      now.getUTCDate() + (isTomorrow ? 1 : 0),
+      h, m, 0, 0
+    );
+
+    stdHhmm = pad(h) + pad(m);
+    stdEpochMs = newEpoch;
+    localStorage.setItem('std_hhmm', stdHhmm);
+    localStorage.setItem('std_epoch_ms', String(stdEpochMs));
+
+    completedIds = new Set();
+    persistCompleted();
+
+    updateStdDisplay();
+    document.getElementById('modal-overlay').classList.remove('visible');
+    renderChecklist();
+  }
+
+  function updateStdDisplay() {
+    if (stdHhmm) {
+      document.getElementById('std-value').textContent = stdHhmm.slice(0, 2) + ':' + stdHhmm.slice(2) + ' UTC';
+    }
+  }
+
+  // Format HH:MM automatically as user types
+  document.addEventListener('DOMContentLoaded', () => {
+    const input = document.getElementById('std-input');
+    input.addEventListener('input', () => {
+      let v = input.value.replace(/\D/g, '').slice(0, 4);
+      if (v.length > 2) v = v.slice(0, 2) + ':' + v.slice(2);
+      input.value = v;
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') saveStd();
+    });
+  });
+
+  // ── EDITOR ──
+  function renderEditor() {
+    const container = document.getElementById('editor-container');
+    const sorted = [...items].sort((a, b) => a.offset - b.offset);
+
+    document.getElementById('editor-count').textContent = sorted.length + ' item' + (sorted.length !== 1 ? 's' : '');
+
+    if (sorted.length === 0) {
+      container.innerHTML = '<div class="empty-state">No items yet. Tap "+ Add Item" below to start.</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    sorted.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'editor-row';
+      row.innerHTML =
+        '<span class="editor-offset">' + formatOffset(item.offset) + '</span>' +
+        '<span class="editor-label">' + escapeHtml(item.label) + '</span>' +
+        '<button class="btn-delete-item" data-id="' + item.id + '" aria-label="Delete">&#10005;</button>';
+      container.appendChild(row);
+    });
+
+    container.querySelectorAll('.btn-delete-item').forEach(btn => {
+      btn.addEventListener('click', () => deleteItem(btn.dataset.id));
+    });
+  }
+
+  function deleteItem(id) {
+    items = items.filter(i => i.id !== id);
+    completedIds.delete(id);
+    persistItems();
+    persistCompleted();
+    renderEditor();
+  }
+
+  function showAddForm() {
+    document.getElementById('btn-show-add').style.display = 'none';
+    const form = document.getElementById('add-item-form');
+    form.classList.add('visible');
+    document.getElementById('input-offset').value = '';
+    document.getElementById('input-label').value = '';
+    document.getElementById('input-offset').focus();
+  }
+
+  function hideAddForm() {
+    document.getElementById('btn-show-add').style.display = '';
+    document.getElementById('add-item-form').classList.remove('visible');
+  }
+
+  function submitAddItem() {
+    const offsetVal = document.getElementById('input-offset').value.trim();
+    const labelVal = document.getElementById('input-label').value.trim();
+
+    if (offsetVal === '' || isNaN(parseInt(offsetVal, 10))) {
+      alert('Enter a valid T offset (e.g. -75 or 30)');
+      return;
+    }
+    if (!labelVal) {
+      alert('Enter a description for this checklist item.');
+      return;
+    }
+
+    items.push({ id: newId(), offset: parseInt(offsetVal, 10), label: labelVal });
+    persistItems();
+    hideAddForm();
+    renderEditor();
+  }
+
+  function confirmReset() {
+    if (confirm('Reset all checklist completions? This clears all checkmarks for this flight.')) {
+      completedIds = new Set();
+      persistCompleted();
+      renderEditor();
+    }
+  }
+
+  // ── VIEW MANAGEMENT ──
+  function showView(view) {
+    currentView = view;
+    document.getElementById('view-main').style.display = view === 'main' ? '' : 'none';
+    document.getElementById('view-editor').style.display = view === 'editor' ? 'flex' : 'none';
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.view === view);
+    });
+    if (view === 'main') renderChecklist();
+    if (view === 'editor') renderEditor();
+  }
+
+  // ── INSTALL HINT ──
+  function showInstallHint() {
+    if (navigator.standalone || localStorage.getItem('install_hint_shown')) return;
+    document.getElementById('install-hint').classList.add('visible');
+  }
+
+  function dismissInstallHint() {
+    localStorage.setItem('install_hint_shown', '1');
+    document.getElementById('install-hint').classList.remove('visible');
+  }
+
+  // ── INIT ──
+  document.addEventListener('DOMContentLoaded', () => {
+    loadState();
+    acquireWakeLock();
+    registerSW();
+
+    attachSwipeHandlers();
+
+    updateStdDisplay();
+    setInterval(tick, 1000);
+    updateClock();
+
+    if (!stdEpochMs) {
+      openStdModal(true);
+    } else {
+      renderChecklist();
+    }
+
+    showInstallHint();
+  });
+</script>
+</body>
+</html>
