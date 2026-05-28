@@ -685,6 +685,8 @@
   let currentView = 'main';
 
   // ── DEFAULT ITEMS ──
+  // Bump DEFAULTS_VERSION whenever DEFAULT_ITEMS changes — existing installs re-seed default-* items on next load.
+  const DEFAULTS_VERSION = 1;
   const DEFAULT_ITEMS = [
     { id: 'default-1',  offset: -75, label: 'Bridge Connected' },
     { id: 'default-1b', offset: -70, label: 'Cabin Crew Briefing' },
@@ -707,10 +709,17 @@
   // ── LOCALSTORAGE ──
   function loadState() {
     items = JSON.parse(localStorage.getItem('checklist_items') || '[]');
+    const storedDefaultsVersion = parseInt(localStorage.getItem('defaults_version') || '0', 10);
     if (items.length === 0) {
       items = DEFAULT_ITEMS.map(i => ({ ...i }));
       persistItems();
+    } else if (storedDefaultsVersion < DEFAULTS_VERSION) {
+      // Re-seed default-* items from current DEFAULT_ITEMS; preserve user-added custom items (non-default ids).
+      const customItems = items.filter(i => !String(i.id).startsWith('default-'));
+      items = [...DEFAULT_ITEMS.map(i => ({ ...i })), ...customItems];
+      persistItems();
     }
+    localStorage.setItem('defaults_version', String(DEFAULTS_VERSION));
     completedIds = new Set(JSON.parse(localStorage.getItem('completed_ids') || '[]'));
     stdHhmm = localStorage.getItem('std_hhmm') || '';
     stdEpochMs = parseInt(localStorage.getItem('std_epoch_ms') || '0', 10);
