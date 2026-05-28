@@ -733,6 +733,15 @@
     localStorage.setItem('completed_ids', JSON.stringify([...completedIds]));
   }
 
+  function clearFlightState() {
+    stdHhmm = '';
+    stdEpochMs = 0;
+    completedIds = new Set();
+    localStorage.removeItem('std_hhmm');
+    localStorage.removeItem('std_epoch_ms');
+    persistCompleted();
+  }
+
   function newId() {
     return typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
@@ -1127,12 +1136,7 @@
 
   function resetStd() {
     if (confirm('Start a new flight? This clears the STD and all completions.')) {
-      stdHhmm = '';
-      stdEpochMs = 0;
-      completedIds = new Set();
-      localStorage.removeItem('std_hhmm');
-      localStorage.removeItem('std_epoch_ms');
-      persistCompleted();
+      clearFlightState();
       showView('main');
       openStdModal(true);
     }
@@ -1164,6 +1168,7 @@
   // ── INIT ──
   document.addEventListener('DOMContentLoaded', () => {
     loadState();
+    clearFlightState();
     acquireWakeLock();
     registerSW();
 
