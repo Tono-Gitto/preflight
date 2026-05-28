@@ -1,5 +1,5 @@
-const CACHE_NAME = 'timeline-v8';
-const SHELL = ['./index.html', './manifest.json', './sw.js', './icon-192.png', './icon-180.png'];
+const CACHE_NAME = 'timeline-v9';
+const SHELL = ['./index.html', './manifest.json', './icon-192.png', './icon-180.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -17,21 +17,27 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  const isHtml = url.pathname.endsWith('/') || url.pathname.endsWith('.html');
-  if (isHtml) {
-    // Timestamp query string busts HTTP cache unconditionally — cache:'reload' is ignored by iOS Safari
+
+  // Never intercept on localhost — let the dev server serve directly
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return;
+
+  // Navigation requests (HTML): network-first with cache:'no-store' to bypass HTTP cache.
+  // Fall back to cached index.html only if offline.
+  if (e.request.mode === 'navigate') {
     e.respondWith(
-      fetch(url.origin + url.pathname + '?_sw=' + Date.now())
+      fetch(e.request, { cache: 'no-store' })
         .then(res => {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then(c => c.put('./index.html', clone));
+          }
           return res;
         })
-        .catch(() => caches.match(e.request))
+        .catch(() => caches.match('./index.html'))
     );
-  } else {
-    e.respondWith(
-      caches.match(e.request).then(cached => cached || fetch(e.request))
-    );
+    return;
   }
+
+  // Static assets (icons, manifest): cache-first
+  e.respondWith(caches.match(e.request).then(cached => cached || fetch(e.request)));
 });
