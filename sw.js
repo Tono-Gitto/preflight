@@ -1,4 +1,4 @@
-const CACHE_NAME = 'timeline-v10';
+const CACHE_NAME = 'timeline-v11';
 const SHELL = ['./index.html', './manifest.json', './icon-192.png', './icon-180.png'];
 
 self.addEventListener('install', e => {

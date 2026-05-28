@@ -686,7 +686,7 @@
 
   // ── DEFAULT ITEMS ──
   // Bump DEFAULTS_VERSION whenever DEFAULT_ITEMS changes — existing installs re-seed default-* items on next load.
-  const DEFAULTS_VERSION = 1;
+  const DEFAULTS_VERSION = 2;
   const DEFAULT_ITEMS = [
     { id: 'default-1',  offset: -75, label: 'Bridge Connected' },
     { id: 'default-1b', offset: -70, label: 'Cabin Crew Briefing' },
@@ -702,8 +702,8 @@
     { id: 'default-10', offset: -10, label: 'APU Started' },
     { id: 'default-11', offset: -10, label: 'Push Back Truck Ready' },
     { id: 'default-12', offset: -10, label: 'Loadsheet' },
-    { id: 'default-13', offset: -10, label: 'When 80% Boarded, Make Welcome PA if available' },
-    { id: 'default-14', offset:  20, label: 'Make PA if not completed on GND' },
+    { id: 'default-13', offset: -10, label: 'Welcome PA on GND' },
+    { id: 'default-14', offset:  20, label: 'Welcome PA in flight' },
   ];
 
   // ── LOCALSTORAGE ──
