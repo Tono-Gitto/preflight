@@ -1,4 +1,4 @@
-const CACHE_NAME = 'timeline-v7';
+const CACHE_NAME = 'timeline-v8';
 const SHELL = ['./index.html', './manifest.json', './sw.js', './icon-192.png', './icon-180.png'];
 
 self.addEventListener('install', e => {
@@ -19,9 +19,9 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   const isHtml = url.pathname.endsWith('/') || url.pathname.endsWith('.html');
   if (isHtml) {
-    // Network-first for HTML: always get fresh content, fall back to cache offline
+    // Timestamp query string busts HTTP cache unconditionally — cache:'reload' is ignored by iOS Safari
     e.respondWith(
-      fetch(new Request(e.request.url, { cache: 'reload' }))
+      fetch(url.origin + url.pathname + '?_sw=' + Date.now())
         .then(res => {
           const clone = res.clone();
           caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
