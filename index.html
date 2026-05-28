@@ -120,6 +120,11 @@
       background: inherit;
     }
 
+    .checklist-row.locked .row-inner {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
     .col-offset {
       font-family: 'SF Mono', 'Courier New', monospace;
       font-size: 13px;
@@ -809,11 +814,27 @@
     return 'row-blue';
   }
 
+  function isRowLocked(item) {
+    if (!stdEpochMs) return false;
+    const gnd = items.find(i => i.id === 'default-13');
+    if (!gnd) return false;
+    const gateReached = Date.now() >= stdEpochMs + gnd.offset * 60000;
+    const gndCompleted = completedIds.has('default-13');
+    if (item.id === 'default-14') return !gateReached || gndCompleted;
+    if (item.id === 'default-13') return gateReached;
+    return false;
+  }
+
+  function rowClasses(item) {
+    const base = 'checklist-row ' + rowColorClass(item);
+    return isRowLocked(item) ? base + ' locked' : base;
+  }
+
   function updateRowColors() {
     document.querySelectorAll('.checklist-row').forEach(row => {
       const id = row.dataset.id;
       const item = items.find(i => i.id === id);
-      if (item) row.className = 'checklist-row ' + rowColorClass(item);
+      if (item) row.className = rowClasses(item);
     });
   }
 
@@ -856,7 +877,7 @@
     sorted.forEach(item => {
       const itemMs = stdEpochMs + item.offset * 60000;
       const row = document.createElement('div');
-      row.className = 'checklist-row ' + rowColorClass(item);
+      row.className = rowClasses(item);
       row.dataset.id = item.id;
 
       row.innerHTML =
@@ -967,10 +988,7 @@
   function markDone(id) {
     completedIds.add(id);
     persistCompleted();
-    const row = document.querySelector('.checklist-row[data-id="' + id + '"]');
-    if (row) {
-      row.className = 'checklist-row row-done';
-    }
+    updateRowColors();
   }
 
   function markUndone(id) {
