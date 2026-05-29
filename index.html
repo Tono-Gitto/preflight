@@ -123,6 +123,9 @@
     .checklist-row.locked {
       background-color: #252830;
     }
+    .checklist-row.locked.row-done {
+      background-color: #1e1e1e;
+    }
     .checklist-row.locked .row-inner {
       pointer-events: none;
     }
@@ -820,9 +823,9 @@
     if (!stdEpochMs) return false;
     const gnd = items.find(i => i.id === 'default-13');
     if (!gnd) return false;
-    const gateReached = Date.now() >= stdEpochMs + gnd.offset * 60000;
+    const gateReached = Date.now() >= stdEpochMs;
     const gndCompleted = completedIds.has('default-13');
-    if (item.id === 'default-14') return !gateReached || gndCompleted;
+    if (item.id === 'default-14') return !gateReached || (gndCompleted && !completedIds.has('default-14'));
     if (item.id === 'default-13') return gateReached;
     return false;
   }
@@ -989,12 +992,16 @@
 
   function markDone(id) {
     completedIds.add(id);
+    if (id === 'default-13') completedIds.add('default-14');
+    if (id === 'default-14') completedIds.add('default-13');
     persistCompleted();
     updateRowColors();
   }
 
   function markUndone(id) {
     completedIds.delete(id);
+    if (id === 'default-13') completedIds.delete('default-14');
+    if (id === 'default-14') completedIds.delete('default-13');
     persistCompleted();
     updateRowColors();
   }
