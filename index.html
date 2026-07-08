@@ -190,10 +190,11 @@
     }
 
     /* Row color states */
-    .row-blue  { background: #0d2a45; }
-    .row-green { background: #0d3320; }
-    .row-red   { background: #3d0d0d; }
-    .row-done  { background: #1e1e1e; }
+    .row-blue    { background: #0d2a45; }
+    .row-green   { background: #0d3320; }
+    .row-red     { background: #3d0d0d; }
+    .row-done    { background: #1e1e1e; }
+    .row-pending { background: #1a1a1a; }
 
     .row-done .col-label {
       color: rgba(255,255,255,0.35);
@@ -720,39 +721,64 @@
   ];
 
   // ── LOCALSTORAGE ──
+  // Parses a JSON array from localStorage, tolerating missing/corrupted values.
+  function safeParseArray(raw, fallback) {
+    if (raw === null) return fallback;
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   function loadState() {
-    items = JSON.parse(localStorage.getItem('checklist_items') || '[]');
+    const rawItems = localStorage.getItem('checklist_items');
+    const deletedDefaultIds = new Set(safeParseArray(localStorage.getItem('deleted_default_ids'), []));
     const storedDefaultsVersion = parseInt(localStorage.getItem('defaults_version') || '0', 10);
-    if (items.length === 0) {
+
+    if (rawItems === null) {
+      // Fresh install — no key at all — seed all defaults.
       items = DEFAULT_ITEMS.map(i => ({ ...i }));
       persistItems();
-    } else if (storedDefaultsVersion < DEFAULTS_VERSION) {
-      // Re-seed default-* items from current DEFAULT_ITEMS; preserve user-added custom items (non-default ids).
-      const customItems = items.filter(i => !String(i.id).startsWith('default-'));
-      items = [...DEFAULT_ITEMS.map(i => ({ ...i })), ...customItems];
-      persistItems();
+    } else {
+      const parsedItems = safeParseArray(rawItems, null);
+      if (parsedItems === null) {
+        // Corrupted value — recover with defaults rather than crashing.
+        items = DEFAULT_ITEMS.map(i => ({ ...i }));
+        persistItems();
+      } else {
+        items = parsedItems;
+        if (storedDefaultsVersion < DEFAULTS_VERSION) {
+          // Re-seed default-* items from current DEFAULT_ITEMS, skipping ones the user
+          // explicitly deleted; preserve user-added custom items (non-default ids).
+          const customItems = items.filter(i => !String(i.id).startsWith('default-'));
+          const freshDefaults = DEFAULT_ITEMS
+            .filter(i => !deletedDefaultIds.has(i.id))
+            .map(i => ({ ...i }));
+          items = [...freshDefaults, ...customItems];
+          persistItems();
+        }
+      }
     }
     localStorage.setItem('defaults_version', String(DEFAULTS_VERSION));
-    completedIds = new Set(JSON.parse(localStorage.getItem('completed_ids') || '[]'));
-    stdHhmm = localStorage.getItem('std_hhmm') || '';
-    stdEpochMs = parseInt(localStorage.getItem('std_epoch_ms') || '0', 10);
+    // STD and completions are intentionally not restored here — every session starts a
+    // fresh flight (see clearFlightState(), always called right after loadState() at init).
   }
 
   function persistItems() {
-    localStorage.setItem('checklist_items', JSON.stringify(items));
+    try { localStorage.setItem('checklist_items', JSON.stringify(items)); } catch (e) {}
   }
 
-  function persistCompleted() {
-    localStorage.setItem('completed_ids', JSON.stringify([...completedIds]));
+  function persistDeletedDefaultIds(ids) {
+    try { localStorage.setItem('deleted_default_ids', JSON.stringify([...ids])); } catch (e) {}
   }
 
   function clearFlightState() {
     stdHhmm = '';
     stdEpochMs = 0;
     completedIds = new Set();
-    localStorage.removeItem('std_hhmm');
-    localStorage.removeItem('std_epoch_ms');
-    persistCompleted();
+    updateStdDisplay();
   }
 
   function newId() {
@@ -793,6 +819,9 @@
     let reloading = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (reloading) return;
+      // Don't yank a just-entered STD out from under the pilot mid-flight-prep — the new
+      // SW will simply take effect on the next natural launch instead.
+      if (stdEpochMs) return;
       reloading = true;
       location.reload();
     });
@@ -815,6 +844,7 @@
 
   // ── COLOR LOGIC ──
   function rowColorClass(item) {
+    if (!stdEpochMs) return 'row-pending';
     if (completedIds.has(item.id)) return 'row-done';
     const deltaMin = (stdEpochMs + item.offset * 60000 - Date.now()) / 60000;
     if (deltaMin < 0)   return 'row-red';
@@ -825,11 +855,14 @@
   function isRowLocked(item) {
     if (!stdEpochMs) return false;
     const gnd = items.find(i => i.id === 'default-13');
+    const flt = items.find(i => i.id === 'default-14');
     if (!gnd) return false;
     const gateReached = Date.now() >= stdEpochMs;
     const gndCompleted = completedIds.has('default-13');
     if (item.id === 'default-14') return !gateReached || (gndCompleted && !completedIds.has('default-14'));
-    if (item.id === 'default-13') return gateReached;
+    // default-13's only undo path is via default-14 once the gate is passed — if default-14
+    // was deleted, never lock default-13, or the completion could get stuck with no way back.
+    if (item.id === 'default-13') return flt ? gateReached : false;
     return false;
   }
 
@@ -842,7 +875,9 @@
     document.querySelectorAll('.checklist-row').forEach(row => {
       const id = row.dataset.id;
       const item = items.find(i => i.id === id);
-      if (item) row.className = rowClasses(item);
+      if (!item) return;
+      const next = rowClasses(item);
+      if (row.className !== next) row.className = next;
     });
   }
 
@@ -855,7 +890,7 @@
     const dayDiff = Math.round((itemMidnight - stdMidnight) / 86400000);
     const hhmm = pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
     if (dayDiff === 0) return hhmm;
-    return hhmm + '<span class="day-indicator">' + (dayDiff > 0 ? '+1' : '-1') + '</span>';
+    return hhmm + '<span class="day-indicator">' + (dayDiff > 0 ? '+' + dayDiff : dayDiff) + '</span>';
   }
 
   function formatOffset(offset) {
@@ -893,7 +928,7 @@
         '<div class="swipe-hint-right">&#8635;</div>' +
         '<div class="row-inner">' +
           '<span class="col-offset">' + formatOffset(item.offset) + '</span>' +
-          '<span class="col-time">' + formatItemTime(itemMs) + '</span>' +
+          '<span class="col-time">' + (stdEpochMs ? formatItemTime(itemMs) : '--:--') + '</span>' +
           '<span class="col-label">' + escapeHtml(item.label) + '</span>' +
         '</div>';
 
@@ -905,9 +940,27 @@
   // ── SWIPE GESTURE ──
   function attachSwipeHandlers() {
     const container = document.getElementById('checklist-container');
-    let startX, startY, activeInner = null, disambiguated = false;
+    let startX, startY, activeInner = null, disambiguated = false, activeTouchId = null;
+
+    // Snap the in-progress row back without completing/undoing it — used when a touch/drag
+    // is interrupted (touchcancel, window blur, mouseup outside the window) rather than
+    // released normally.
+    function resetActiveRow() {
+      if (!activeInner) return;
+      activeInner.style.transition = 'transform 0.2s';
+      activeInner.style.transform = 'translateX(0)';
+      activeInner = null;
+    }
+
+    function findTouchById(touchList, id) {
+      for (let i = 0; i < touchList.length; i++) {
+        if (touchList[i].identifier === id) return touchList[i];
+      }
+      return null;
+    }
 
     container.addEventListener('touchstart', e => {
+      if (activeInner) return; // already tracking a finger — ignore additional touches
       const inner = e.target.closest('.row-inner');
       if (!inner) return;
       container.querySelectorAll('.row-inner').forEach(el => {
@@ -916,19 +969,23 @@
           el.style.transform = 'translateX(0)';
         }
       });
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
+      const touch = e.changedTouches[0];
+      startX = touch.clientX;
+      startY = touch.clientY;
       activeInner = inner;
+      activeTouchId = touch.identifier;
       disambiguated = false;
     }, { passive: true });
 
     container.addEventListener('touchmove', e => {
       if (!activeInner) return;
-      const dx = e.touches[0].clientX - startX;
-      const dy = e.touches[0].clientY - startY;
+      const touch = findTouchById(e.touches, activeTouchId);
+      if (!touch) return; // a different finger moved — ignore
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
 
       if (!disambiguated) {
-        if (Math.abs(dy) > Math.abs(dx) + 5) { activeInner = null; return; }
+        if (Math.abs(dy) > Math.abs(dx) + 5) { activeInner = null; activeTouchId = null; return; }
         if (Math.abs(dx) > 8) disambiguated = true;
         else return;
       }
@@ -946,17 +1003,32 @@
 
     container.addEventListener('touchend', e => {
       if (!activeInner) return;
-      const dx = e.changedTouches[0].clientX - startX;
+      const touch = findTouchById(e.changedTouches, activeTouchId);
+      if (!touch) return; // a different finger lifted — keep tracking the active one
+      const dx = touch.clientX - startX;
       const id = activeInner.closest('.checklist-row').dataset.id;
-      activeInner.style.transition = 'transform 0.2s';
-      activeInner.style.transform = 'translateX(0)';
-      activeInner = null;
+      resetActiveRow();
+      activeTouchId = null;
       if (dx > 44)  markDone(id);
       if (dx < -44) markUndone(id);
     }, { passive: true });
 
+    // iOS fires touchcancel (not touchend) when a system gesture, notification, or app
+    // switch interrupts the touch — snap back without triggering markDone/markUndone.
+    container.addEventListener('touchcancel', e => {
+      const touch = findTouchById(e.changedTouches, activeTouchId);
+      if (!touch) return;
+      resetActiveRow();
+      activeTouchId = null;
+    }, { passive: true });
+
     // ── MOUSE DRAG (macOS / desktop testing) ──
     let mouseTracking = false;
+
+    function cancelMouseDrag() {
+      resetActiveRow();
+      mouseTracking = false;
+    }
 
     container.addEventListener('mousedown', e => {
       const inner = e.target.closest('.row-inner');
@@ -968,11 +1040,23 @@
       startY = e.clientY;
       activeInner = inner;
       mouseTracking = true;
+      disambiguated = false;
     });
 
     document.addEventListener('mousemove', e => {
       if (!mouseTracking || !activeInner) return;
+      // The mouse button was released outside the window (no mouseup delivered here).
+      if (e.buttons === 0) { cancelMouseDrag(); return; }
+
       const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      if (!disambiguated) {
+        if (Math.abs(dy) > Math.abs(dx) + 5) { cancelMouseDrag(); return; }
+        if (Math.abs(dx) > 8) disambiguated = true;
+        else return;
+      }
+
       const id = activeInner.closest('.checklist-row').dataset.id;
       const isCompleted = completedIds.has(id);
       const clamped = isCompleted ? Math.max(-88, Math.min(0, dx)) : Math.max(0, Math.min(88, dx));
@@ -984,28 +1068,29 @@
       if (!mouseTracking || !activeInner) return;
       const dx = e.clientX - startX;
       const id = activeInner.closest('.checklist-row').dataset.id;
-      activeInner.style.transition = 'transform 0.2s';
-      activeInner.style.transform = 'translateX(0)';
-      mouseTracking = false;
-      activeInner = null;
+      cancelMouseDrag();
       if (dx > 44)  markDone(id);
       if (dx < -44) markUndone(id);
+    });
+
+    // If the window loses focus mid-drag (e.g. alt-tab) with no mouseup ever delivered,
+    // snap the row back so it doesn't stay stuck translated.
+    window.addEventListener('blur', () => {
+      if (mouseTracking) cancelMouseDrag();
     });
   }
 
   function markDone(id) {
     completedIds.add(id);
-    if (id === 'default-13') completedIds.add('default-14');
-    if (id === 'default-14') completedIds.add('default-13');
-    persistCompleted();
+    const partnerId = id === 'default-13' ? 'default-14' : id === 'default-14' ? 'default-13' : null;
+    if (partnerId && items.some(i => i.id === partnerId)) completedIds.add(partnerId);
     updateRowColors();
   }
 
   function markUndone(id) {
     completedIds.delete(id);
-    if (id === 'default-13') completedIds.delete('default-14');
-    if (id === 'default-14') completedIds.delete('default-13');
-    persistCompleted();
+    const partnerId = id === 'default-13' ? 'default-14' : id === 'default-14' ? 'default-13' : null;
+    if (partnerId && items.some(i => i.id === partnerId)) completedIds.delete(partnerId);
     updateRowColors();
   }
 
@@ -1019,7 +1104,17 @@
     } else {
       document.getElementById('std-input').value = '';
     }
-    selectDay('today');
+    if (stdEpochMs) {
+      // Reflect the existing STD's actual calendar day so re-opening the modal (Change STD)
+      // near midnight doesn't silently flip a "Tomorrow" departure back to "Today".
+      const now = new Date();
+      const todayMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      const stdDate = new Date(stdEpochMs);
+      const stdMidnight = Date.UTC(stdDate.getUTCFullYear(), stdDate.getUTCMonth(), stdDate.getUTCDate());
+      selectDay(stdMidnight > todayMidnight ? 'tomorrow' : 'today');
+    } else {
+      selectDay('today');
+    }
     document.getElementById('modal-cancel').style.display = firstTime ? 'none' : '';
     document.getElementById('modal-overlay').classList.add('visible');
   }
@@ -1060,8 +1155,6 @@
 
     stdHhmm = pad(h) + pad(m);
     stdEpochMs = newEpoch;
-    localStorage.setItem('std_hhmm', stdHhmm);
-    localStorage.setItem('std_epoch_ms', String(stdEpochMs));
 
     updateStdDisplay();
     document.getElementById('modal-overlay').classList.remove('visible');
@@ -1069,9 +1162,9 @@
   }
 
   function updateStdDisplay() {
-    if (stdHhmm) {
-      document.getElementById('std-value').textContent = stdHhmm.slice(0, 2) + ':' + stdHhmm.slice(2) + ' UTC';
-    }
+    document.getElementById('std-value').textContent = stdHhmm
+      ? stdHhmm.slice(0, 2) + ':' + stdHhmm.slice(2) + ' UTC'
+      : '--:--';
   }
 
   // Format HH:MM automatically as user types
@@ -1116,10 +1209,16 @@
   }
 
   function deleteItem(id) {
+    const item = items.find(i => i.id === id);
+    if (item && !confirm('Delete "' + item.label + '"?')) return;
     items = items.filter(i => i.id !== id);
     completedIds.delete(id);
+    if (String(id).startsWith('default-')) {
+      const deletedDefaultIds = new Set(safeParseArray(localStorage.getItem('deleted_default_ids'), []));
+      deletedDefaultIds.add(id);
+      persistDeletedDefaultIds(deletedDefaultIds);
+    }
     persistItems();
-    persistCompleted();
     renderEditor();
   }
 
@@ -1137,12 +1236,19 @@
     document.getElementById('add-item-form').classList.remove('visible');
   }
 
+  const MAX_OFFSET_MIN = 720; // ±12h — beyond this the day-indicator (+N) stops being a quick glance
+
   function submitAddItem() {
     const offsetVal = document.getElementById('input-offset').value.trim();
     const labelVal = document.getElementById('input-label').value.trim();
 
-    if (offsetVal === '' || isNaN(parseInt(offsetVal, 10))) {
+    if (!/^-?\d+$/.test(offsetVal)) {
       alert('Enter a valid T offset (e.g. -75 or 30)');
+      return;
+    }
+    const offset = parseInt(offsetVal, 10);
+    if (offset < -MAX_OFFSET_MIN || offset > MAX_OFFSET_MIN) {
+      alert('T offset must be between -' + MAX_OFFSET_MIN + ' and +' + MAX_OFFSET_MIN + ' minutes.');
       return;
     }
     if (!labelVal) {
@@ -1150,7 +1256,7 @@
       return;
     }
 
-    items.push({ id: newId(), offset: parseInt(offsetVal, 10), label: labelVal });
+    items.push({ id: newId(), offset, label: labelVal });
     persistItems();
     hideAddForm();
     renderEditor();
@@ -1159,7 +1265,6 @@
   function confirmReset() {
     if (confirm('Reset all checklist completions? This clears all checkmarks for this flight.')) {
       completedIds = new Set();
-      persistCompleted();
       renderEditor();
     }
   }
@@ -1185,8 +1290,14 @@
   }
 
   // ── INSTALL HINT ──
+  function isIosDevice() {
+    // iPadOS reports as "MacIntel" but, unlike a real Mac, exposes multi-touch.
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
   function showInstallHint() {
-    if (navigator.standalone || localStorage.getItem('install_hint_shown')) return;
+    if (!isIosDevice() || navigator.standalone || localStorage.getItem('install_hint_shown')) return;
     document.getElementById('install-hint').classList.add('visible');
   }
 
@@ -1204,7 +1315,6 @@
 
     attachSwipeHandlers();
 
-    updateStdDisplay();
     setInterval(tick, 1000);
     updateClock();
 
