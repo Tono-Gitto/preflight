@@ -696,8 +696,6 @@
   let currentView = 'main';
 
   // ── DEFAULT ITEMS ──
-  // Bump DEFAULTS_VERSION whenever DEFAULT_ITEMS changes — existing installs re-seed default-* items on next load.
-  const DEFAULTS_VERSION = 4;
   const DEFAULT_ITEMS = [
     { id: 'default-1',  offset: -75, label: 'Bridge Connected' },
     { id: 'default-1b', offset: -70, label: 'Cabin Crew Briefing' },
@@ -720,58 +718,16 @@
     { id: 'default-14', offset:  20, label: 'Welcome PA in flight' },
   ];
 
-  // ── LOCALSTORAGE ──
-  // Parses a JSON array from localStorage, tolerating missing/corrupted values.
-  function safeParseArray(raw, fallback) {
-    if (raw === null) return fallback;
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : fallback;
-    } catch (e) {
-      return fallback;
-    }
+  // ── CHECKLIST STATE ──
+  function seedDefaultItems() {
+    items = DEFAULT_ITEMS.map(i => ({ ...i }));
   }
 
   function loadState() {
-    const rawItems = localStorage.getItem('checklist_items');
-    const deletedDefaultIds = new Set(safeParseArray(localStorage.getItem('deleted_default_ids'), []));
-    const storedDefaultsVersion = parseInt(localStorage.getItem('defaults_version') || '0', 10);
-
-    if (rawItems === null) {
-      // Fresh install — no key at all — seed all defaults.
-      items = DEFAULT_ITEMS.map(i => ({ ...i }));
-      persistItems();
-    } else {
-      const parsedItems = safeParseArray(rawItems, null);
-      if (parsedItems === null) {
-        // Corrupted value — recover with defaults rather than crashing.
-        items = DEFAULT_ITEMS.map(i => ({ ...i }));
-        persistItems();
-      } else {
-        items = parsedItems;
-        if (storedDefaultsVersion < DEFAULTS_VERSION) {
-          // Re-seed default-* items from current DEFAULT_ITEMS, skipping ones the user
-          // explicitly deleted; preserve user-added custom items (non-default ids).
-          const customItems = items.filter(i => !String(i.id).startsWith('default-'));
-          const freshDefaults = DEFAULT_ITEMS
-            .filter(i => !deletedDefaultIds.has(i.id))
-            .map(i => ({ ...i }));
-          items = [...freshDefaults, ...customItems];
-          persistItems();
-        }
-      }
-    }
-    localStorage.setItem('defaults_version', String(DEFAULTS_VERSION));
-    // STD and completions are intentionally not restored here — every session starts a
-    // fresh flight (see clearFlightState(), always called right after loadState() at init).
-  }
-
-  function persistItems() {
-    try { localStorage.setItem('checklist_items', JSON.stringify(items)); } catch (e) {}
-  }
-
-  function persistDeletedDefaultIds(ids) {
-    try { localStorage.setItem('deleted_default_ids', JSON.stringify([...ids])); } catch (e) {}
+    // The checklist is intentionally session-only, same as STD/completions (see
+    // clearFlightState()): Editor add/delete edits apply only to the current flight and
+    // are never persisted, so every new flight starts from a clean DEFAULT_ITEMS.
+    seedDefaultItems();
   }
 
   function clearFlightState() {
@@ -1213,12 +1169,6 @@
     if (item && !confirm('Delete "' + item.label + '"?')) return;
     items = items.filter(i => i.id !== id);
     completedIds.delete(id);
-    if (String(id).startsWith('default-')) {
-      const deletedDefaultIds = new Set(safeParseArray(localStorage.getItem('deleted_default_ids'), []));
-      deletedDefaultIds.add(id);
-      persistDeletedDefaultIds(deletedDefaultIds);
-    }
-    persistItems();
     renderEditor();
   }
 
@@ -1257,7 +1207,6 @@
     }
 
     items.push({ id: newId(), offset, label: labelVal });
-    persistItems();
     hideAddForm();
     renderEditor();
   }
@@ -1270,8 +1219,9 @@
   }
 
   function resetStd() {
-    if (confirm('Start a new flight? This clears the STD and all completions.')) {
+    if (confirm('Start a new flight? This clears the STD, all completions, and any checklist edits made in the Editor.')) {
       clearFlightState();
+      seedDefaultItems();
       showView('main');
       openStdModal(true);
     }
